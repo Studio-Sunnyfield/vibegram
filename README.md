@@ -1,16 +1,15 @@
 # Vibegram
 
-Control [Claude Code](https://claude.ai/claude-code) from Telegram. Voice-first mobile coding.
+Control [Claude Code](https://claude.ai/claude-code) from Telegram.
 
-<img src="docs/screenshot.png" width="300" alt="Vibegram screenshot">
+<img src="icon.png" width="128" alt="Vibegram icon">
 
 ## What is this?
 
-Vibegram is a macOS menu bar app that bridges Telegram to Claude Code CLI. Send voice messages or text from your phone, and Claude Code executes on your machine.
+Vibegram is a macOS menu bar app that bridges Telegram to Claude Code CLI. Send messages from your phone, and Claude Code executes on your machine.
 
 **Use cases:**
-- Code from your phone while walking
-- Voice-first coding with Telegram's speech-to-text
+- Code from your phone while on the go
 - Quick fixes without opening your laptop
 - Mobile pair programming with Claude
 
@@ -26,8 +25,10 @@ Vibegram is a macOS menu bar app that bridges Telegram to Claude Code CLI. Send 
 
 1. Download the latest `.dmg` from [Releases](https://github.com/Studio-Sunnyfield/vibegram/releases)
 2. Drag `Vibegram.app` to Applications
-3. Right-click → Open (required for unsigned apps)
-4. Configure your bot token and user ID in Settings
+3. Open the app (it will be blocked by Gatekeeper)
+4. Go to **System Preferences → Privacy & Security**
+5. Scroll to **Security** and click **"Open Anyway"**
+6. Configure your bot token and user ID in Settings
 
 ### Build from Source
 
@@ -61,16 +62,16 @@ npm run build
 
 ### Features
 
-- **Voice messages** - Telegram transcribes, Claude executes
 - **Images** - Send screenshots for Claude to analyze
 - **Session persistence** - Resume where you left off
 - **Live status** - See what Claude is doing in real-time
+- **Auto-update** - Checks for new versions on startup
 
 ### Status Indicators
 
-The menu bar shows:
-- `🤓` Bot is running
-- `😴` Bot is stopped
+The menu bar icon shows:
+- **Filled** - Bot is running
+- **Outline** - Bot is stopped
 
 In chat:
 - `💭 Thinking...` - Processing your request
@@ -97,7 +98,9 @@ Use this in [Claude Code hooks](https://claude.ai/claude-code/hooks) to customiz
 ## Troubleshooting
 
 **App won't open:**
-- Right-click → Open (macOS Gatekeeper blocks unsigned apps)
+1. Try to open the app
+2. Go to **System Preferences → Privacy & Security**
+3. Click **"Open Anyway"** under Security
 
 **Bot won't start:**
 - Verify your bot token with [@BotFather](https://t.me/botfather)
@@ -105,7 +108,7 @@ Use this in [Claude Code hooks](https://claude.ai/claude-code/hooks) to customiz
 - Ensure Claude Code CLI is installed: `claude --version`
 
 **Commands not working:**
-- Make sure the bot is running (🤓 in menu bar)
+- Make sure the bot is running (filled icon in menu bar)
 - Check the project directory exists
 
 ## License
