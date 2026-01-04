@@ -33,3 +33,7 @@ npm-debug.log*
 # Lock files (optional - remove if you want to commit them)
 package-lock.json
 bun.lockb
+AuthKey_*.p8
+*.p12
+*.cer
+CLAUDE.md
