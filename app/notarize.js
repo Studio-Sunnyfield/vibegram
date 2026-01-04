@@ -6,6 +6,12 @@ exports.default = async function notarizing(context) {
     return;
   }
 
+  // Skip notarization if not signing or missing credentials
+  if (process.env.CSC_IDENTITY_AUTO_DISCOVERY === 'false' || !process.env.APPLE_API_KEY) {
+    console.log('Skipping notarization (no signing or missing credentials)');
+    return;
+  }
+
   const appName = context.packager.appInfo.productFilename;
   const appPath = `${appOutDir}/${appName}.app`;
 
