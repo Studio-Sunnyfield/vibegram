@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Vibegram Settings</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      padding: 20px;
+      background: #1e1e1e;
+      color: #fff;
+      margin: 0;
+    }
+    h2 { margin-top: 0; font-weight: 500; }
+    label { display: block; margin: 15px 0 5px; font-size: 13px; color: #aaa; }
+    input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #444;
+      border-radius: 6px;
+      background: #2d2d2d;
+      color: #fff;
+      font-size: 14px;
+    }
+    input:focus { outline: none; border-color: #007AFF; }
+    .hint { font-size: 11px; color: #666; margin-top: 4px; }
+    .input-row { display: flex; gap: 8px; }
+    .input-row input { flex: 1; }
+    .input-row button { flex-shrink: 0; }
+    .buttons { margin-top: 20px; display: flex; gap: 10px; }
+    button {
+      padding: 10px 20px;
+      background: #007AFF;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover { background: #0056b3; }
+    button.secondary {
+      background: #444;
+    }
+    button.secondary:hover { background: #555; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status {
+      font-size: 12px;
+      margin-top: 10px;
+      padding: 8px;
+      border-radius: 4px;
+    }
+    .status.success { background: #1b4332; color: #95d5b2; }
+    .status.error { background: #4a1515; color: #f5a5a5; }
+    .status.info { background: #1e3a5f; color: #a5c8e5; }
+  </style>
+</head>
+<body>
+  <h2>Vibegram Settings</h2>
+
+  <div id="status" class="status" style="display: none;"></div>
+
+  <label>Telegram Bot Token</label>
+  <input type="password" id="token" placeholder="123456789:ABCdefGHI...">
+  <div class="hint">Get from @BotFather on Telegram</div>
+
+  <label>Your Telegram User ID</label>
+  <input type="text" id="userId" placeholder="123456789">
+  <div class="hint">Send /start to @userinfobot to get your ID</div>
+
+  <label>Default Project Directory</label>
+  <div class="input-row">
+    <input type="text" id="projectRoot" placeholder="/Users/you/projects" readonly>
+    <button class="secondary" onclick="browseFolder()">Browse...</button>
+  </div>
+  <div class="hint">Where Claude Code will run by default</div>
+
+  <div class="buttons">
+    <button class="secondary" onclick="window.close()">Cancel</button>
+    <button id="saveBtn" onclick="save()">Save</button>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+    const os = require('os');
+
+    // Load existing config
+    async function load() {
+      const config = await ipcRenderer.invoke('get-config');
+      document.getElementById('token').value = config.token || '';
+      document.getElementById('userId').value = config.allowedUserId || '';
+      document.getElementById('projectRoot').value = config.projectRoot || os.homedir();
+    }
+
+    // Validate bot token format: number:alphanumeric
+    function isValidToken(token) {
+      return /^\d+:[A-Za-z0-9_-]+$/.test(token);
+    }
+
+    // Browse for folder
+    async function browseFolder() {
+      const result = await ipcRenderer.invoke('browse-folder');
+      if (result) {
+        document.getElementById('projectRoot').value = result;
+      }
+    }
+
+    // Save config
+    async function save() {
+      const token = document.getElementById('token').value.trim();
+      const userId = document.getElementById('userId').value.trim();
+      const projectRoot = document.getElementById('projectRoot').value.trim();
+
+      // Validate token format
+      if (!token) {
+        showStatus('Bot token is required', 'error');
+        return;
+      }
+      if (!isValidToken(token)) {
+        showStatus('Invalid bot token format. Should be like: 123456789:ABCdefGHI...', 'error');
+        return;
+      }
+
+      // Validate user ID
+      if (!userId || isNaN(parseInt(userId))) {
+        showStatus('Valid user ID is required', 'error');
+        return;
+      }
+
+      // Validate project root
+      if (!projectRoot) {
+        showStatus('Project directory is required', 'error');
+        return;
+      }
+
+      // Verify token with Telegram API
+      showStatus('Validating bot token...', 'info');
+      document.getElementById('saveBtn').disabled = true;
+
+      const isValid = await ipcRenderer.invoke('validate-token', token);
+
+      if (!isValid) {
+        showStatus('Invalid bot token - could not connect to Telegram', 'error');
+        document.getElementById('saveBtn').disabled = false;
+        return;
+      }
+
+      await ipcRenderer.invoke('save-config', {
+        token,
+        allowedUserId: parseInt(userId),
+        projectRoot: projectRoot || os.homedir()
+      });
+
+      showStatus('Settings saved! Bot will start automatically.', 'success');
+      setTimeout(() => window.close(), 1500);
+    }
+
+    function showStatus(message, type) {
+      const el = document.getElementById('status');
+      el.textContent = message;
+      el.className = 'status ' + type;
+      el.style.display = 'block';
+    }
+
+    load();
+  </script>
+</body>
+</html>

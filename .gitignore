@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+app/dist/
+app/bot-bundle.cjs
+*.dmg
+*.zip
+*.blockmap
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code local settings
+.claude/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
+
+# Lock files (optional - remove if you want to commit them)
+package-lock.json
+bun.lockb

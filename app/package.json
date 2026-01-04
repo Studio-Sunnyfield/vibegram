@@ -1,0 +1,43 @@
+{
+  "name": "vibegram",
+  "productName": "Vibegram",
+  "version": "1.0.0",
+  "description": "Control Claude Code from Telegram - voice-first mobile coding",
+  "author": "Studio Sunnyfield",
+  "license": "MIT",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --mac",
+    "dist": "electron-builder --mac --publish never"
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.vibegram.app",
+    "productName": "Vibegram",
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["universal"]
+        },
+        {
+          "target": "zip",
+          "arch": ["universal"]
+        }
+      ]
+    },
+    "files": [
+      "main.js",
+      "settings.html",
+      "bot-bundle.cjs"
+    ],
+    "asarUnpack": [
+      "bot-bundle.cjs"
+    ]
+  }
+}
