@@ -1,5 +1,9 @@
 import { Bot, InlineKeyboard, type Context } from "grammy";
 import { ClaudeProcess, type ClaudeProcessOptions } from "./claude";
+import { execSync, exec } from "child_process";
+import * as fs from "fs";
+import * as path from "path";
+import { formatToolUse, stripThinkingTags, resolvePath } from "./utils";
 import type {
   ClaudeEvent,
   AssistantEvent,
@@ -13,32 +17,19 @@ import type {
 interface BotConfig {
   token: string;
   allowedUserId: number;
-}
-
-// Format timestamp as relative time
-function formatAge(timestamp: number): string {
-  const seconds = Math.floor((Date.now() - timestamp) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
-
-interface SessionHistory {
-  id: string;
-  cwd: string;
-  timestamp: number;
+  projectRoot?: string;
 }
 
 interface UserSession {
   claude: ClaudeProcess | null;
   sessionId: string | null;
-  sessionHistory: SessionHistory[]; // For /resume
   cwd: string;
-  statusMessageId: number | null;
+  // Message IDs for the 3 blocks
+  statusMsgId: number | null;
+  outputMsgId: number | null;
+  responseMsgId: number | null;
+  // Current status text
+  lastStatus: string;
   isProcessing: boolean;
 }
 
@@ -55,9 +46,11 @@ export function createBot(config: BotConfig): Bot {
       sessions.set(userId, {
         claude: null,
         sessionId: null,
-        sessionHistory: [],
-        cwd: process.env.HOME || "/",
-        statusMessageId: null,
+        cwd: config.projectRoot || process.env.HOME || "/",
+        statusMsgId: null,
+        outputMsgId: null,
+        responseMsgId: null,
+        lastStatus: "",
         isProcessing: false,
       });
     }
@@ -70,15 +63,16 @@ export function createBot(config: BotConfig): Bot {
       await session.claude.stop();
       session.claude = null;
     }
-    if (session.sessionId) {
-      // Add to history (keep last 5)
-      session.sessionHistory = [
-        { id: session.sessionId, cwd: session.cwd, timestamp: Date.now() },
-        ...session.sessionHistory,
-      ].slice(0, 5);
-      session.sessionId = null;
-    }
+    session.sessionId = null;
     session.isProcessing = false;
+  }
+
+  // Reset message blocks for new request
+  function resetMessageBlocks(session: UserSession): void {
+    session.statusMsgId = null;
+    session.outputMsgId = null;
+    session.responseMsgId = null;
+    session.lastStatus = "";
   }
 
   // Debug: log all updates
@@ -118,7 +112,6 @@ export function createBot(config: BotConfig): Bot {
   bot.command("new", async (ctx) => {
     const session = getSession(ctx.from!.id);
     await killClaude(session);
-    session.sessionHistory = []; // Clear resume history too
     await ctx.reply("Started new conversation.");
   });
 
@@ -156,33 +149,75 @@ export function createBot(config: BotConfig): Bot {
     }
 
     await ctx.answerCallbackQuery();
-    // Edit the message to show full text (remove the button)
     try {
       await ctx.editMessageText(fullText, { parse_mode: "Markdown" });
     } catch {
-      // If too long for edit, send as new message
       await ctx.reply(fullText, { parse_mode: "Markdown" });
     }
     longMessages.delete(msgId);
   });
 
-  // /resume command - continue most recent session in current directory
+  // Helper to get last session summary
+  function getLastSessionSummary(cwd: string): string | null {
+    try {
+      const projectKey = cwd.replace(/\//g, "-");
+      const sessionDir = path.join(
+        process.env.HOME || "",
+        ".claude",
+        "projects",
+        projectKey
+      );
+      if (!fs.existsSync(sessionDir)) return null;
+
+      // Find most recent non-empty .jsonl file
+      const files = fs
+        .readdirSync(sessionDir)
+        .filter((f) => f.endsWith(".jsonl"))
+        .map((f) => ({
+          name: f,
+          path: path.join(sessionDir, f),
+          mtime: fs.statSync(path.join(sessionDir, f)).mtime,
+          size: fs.statSync(path.join(sessionDir, f)).size,
+        }))
+        .filter((f) => f.size > 0)
+        .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+
+      if (files.length === 0) return null;
+
+      // Read the file and find last summary
+      const content = fs.readFileSync(files[0].path, "utf-8");
+      const lines = content.split("\n").filter((l) => l.trim());
+      for (let i = lines.length - 1; i >= 0; i--) {
+        try {
+          const obj = JSON.parse(lines[i]);
+          if (obj.summary) return obj.summary;
+        } catch {
+          continue;
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  // /resume command
   bot.command("resume", async (ctx) => {
     const session = getSession(ctx.from!.id);
-
-    // Kill current if any
     await killClaude(session);
-
-    // Set special "continue" flag
     session.sessionId = "continue";
 
-    await ctx.reply(
-      `Will continue most recent session in \`${session.cwd}\`\nSend a message to continue.`,
-      { parse_mode: "Markdown" }
-    );
+    const summary = getLastSessionSummary(session.cwd);
+    let msg = `📂 \`${session.cwd}\`\n`;
+    if (summary) {
+      msg += `\n📋 *Last session:*\n${summary}\n`;
+    }
+    msg += `\nSend a message to continue.`;
+
+    await ctx.reply(msg, { parse_mode: "Markdown" });
   });
 
-  // /cd command - change working directory
+  // /cd command
   bot.command("cd", async (ctx) => {
     const session = getSession(ctx.from!.id);
     let path = ctx.match?.trim();
@@ -193,17 +228,13 @@ export function createBot(config: BotConfig): Bot {
       return;
     }
 
-    // Expand ~ to home directory
     if (path.startsWith("~")) {
       path = path.replace("~", process.env.HOME || "");
     }
-
-    // Handle relative paths
     if (!path.startsWith("/")) {
       path = `${session.cwd}/${path}`;
     }
 
-    // Reset session when changing directory
     if (session.claude) {
       await session.claude.stop();
       session.claude = null;
@@ -211,9 +242,7 @@ export function createBot(config: BotConfig): Bot {
     session.sessionId = null;
     session.cwd = path;
 
-    await ctx.reply(`Changed to: \`${path}\``, {
-      parse_mode: "Markdown",
-    });
+    await ctx.reply(`Changed to: \`${path}\``, { parse_mode: "Markdown" });
   });
 
   // Handle ! prefix for direct bash commands
@@ -221,7 +250,7 @@ export function createBot(config: BotConfig): Bot {
     const session = getSession(ctx.from!.id);
     const command = ctx.match[1];
 
-    // Handle !cd specially - change session cwd and kill Claude
+    // Handle !cd specially
     if (command.startsWith("cd ")) {
       let path = command.slice(3).trim();
       if (path.startsWith("~")) {
@@ -230,7 +259,6 @@ export function createBot(config: BotConfig): Bot {
       if (!path.startsWith("/")) {
         path = `${session.cwd}/${path}`;
       }
-      // Normalize path (resolve ..)
       const parts = path.split("/").filter(Boolean);
       const resolved: string[] = [];
       for (const part of parts) {
@@ -238,78 +266,98 @@ export function createBot(config: BotConfig): Bot {
         else if (part !== ".") resolved.push(part);
       }
       session.cwd = "/" + resolved.join("/");
-
-      // Kill Claude so next message spawns in new directory
       await killClaude(session);
-
       await ctx.reply(`\`${session.cwd}\``, { parse_mode: "Markdown" });
       return;
     }
 
-    // Run bash command
-    const proc = Bun.spawn(["bash", "-c", command], {
-      cwd: session.cwd,
-      stdout: "pipe",
-      stderr: "pipe",
+    // Run bash command using Node.js
+    exec(command, { cwd: session.cwd }, async (error, stdout, stderr) => {
+      let output = stdout || stderr || "(no output)";
+      if (output.length > 4000) {
+        output = output.slice(0, 4000) + "\n... (truncated)";
+      }
+      const status = error ? `\n\n[exit ${error.code}]` : "";
+      await ctx.reply(`\`\`\`\n${output}${status}\n\`\`\``, { parse_mode: "Markdown" });
+    });
+  });
+
+  // Handle photo messages
+  bot.on("message:photo", async (ctx) => {
+    const session = getSession(ctx.from!.id);
+    const caption = ctx.message.caption || "What's in this image?";
+
+    // Get the largest photo
+    const photo = ctx.message.photo[ctx.message.photo.length - 1];
+    const file = await ctx.api.getFile(photo.file_id);
+    const fileUrl = `https://api.telegram.org/file/bot${config.token}/${file.file_path}`;
+
+    // Download to temp file
+    const tempPath = `/tmp/tgcc_image_${Date.now()}.jpg`;
+    const https = await import("https");
+    const fs = await import("fs");
+
+    await new Promise<void>((resolve, reject) => {
+      const fileStream = fs.createWriteStream(tempPath);
+      https.get(fileUrl, (response) => {
+        response.pipe(fileStream);
+        fileStream.on("finish", () => {
+          fileStream.close();
+          resolve();
+        });
+      }).on("error", reject);
     });
 
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
-    const exitCode = await proc.exited;
-
-    let output = stdout || stderr || "(no output)";
-    if (output.length > 4000) {
-      output = output.slice(0, 4000) + "\n... (truncated)";
-    }
-
-    const status = exitCode === 0 ? "" : `\n\n[exit ${exitCode}]`;
-    await ctx.reply(`\`\`\`\n${output}${status}\n\`\`\``, { parse_mode: "Markdown" });
+    // Send to Claude with image
+    await handleMessage(ctx, session, caption, tempPath);
   });
 
   // Handle text messages
   bot.on("message:text", async (ctx) => {
     const session = getSession(ctx.from!.id);
     const text = ctx.message.text;
+    await handleMessage(ctx, session, text);
+  });
 
-    // If already processing, append to context
+  // Shared message handler
+  async function handleMessage(ctx: Context, session: UserSession, text: string, imagePath?: string) {
     if (session.isProcessing && session.claude) {
-      await session.claude.sendMessage(text);
+      await session.claude.sendMessage(text, imagePath);
       return;
     }
 
     session.isProcessing = true;
+    resetMessageBlocks(session);
 
-    // Send thinking indicator
-    const statusMsg = await ctx.reply("Thinking...");
-    session.statusMessageId = statusMsg.message_id;
+    // Send initial status (no parse_mode to ensure emoji shows)
+    const statusMsg = await ctx.reply("💭 Thinking...");
+    session.statusMsgId = statusMsg.message_id;
+    session.lastStatus = "Thinking...";
 
-    // Create event handler
     const handleEvent = async (event: ClaudeEvent) => {
       await processEvent(ctx, session, event);
     };
 
-    // Start Claude process
     const options: ClaudeProcessOptions = {
       cwd: session.cwd,
-      permissionMode: "acceptEdits",
+      permissionMode: "bypassPermissions",
       sessionId: session.sessionId || undefined,
     };
 
     session.claude = new ClaudeProcess(options, handleEvent);
 
     try {
-      await session.claude.start(text);
+      await session.claude.start(text, imagePath);
     } catch (e) {
       console.error("Failed to start Claude:", e);
-      await ctx.reply(`Error: ${e}`);
+      await ctx.reply("❌ Error: " + e);
       session.isProcessing = false;
     }
-  });
+  }
 
   return bot;
 }
 
-// Process Claude events and update Telegram
 async function processEvent(
   ctx: Context,
   session: UserSession,
@@ -332,30 +380,14 @@ async function processEvent(
         if (content.type === "tool_use") {
           const toolContent = content as ToolUseContent;
           const toolDisplay = formatToolUse(toolContent);
-          await updateStatusMessage(ctx, session, `Running: ${toolDisplay}`);
+          session.lastStatus = toolDisplay;
+          await updateStatusBlock(ctx, session, `🔧 ${toolDisplay}`);
         } else if (content.type === "text") {
           const textContent = content as TextContent;
-          // Filter out <thinking> tags and their content
-          const text = textContent.text
-            .replace(/<thinking>[\s\S]*?<\/thinking>/g, "")
-            .trim();
-          // Send if there's content left
+          const text = stripThinkingTags(textContent.text);
           if (text) {
-            // Truncate long messages with "Show more" button
-            if (text.length > 1500) {
-              const truncated = text.slice(0, 1500) + "\n\n...";
-              const msgId = `msg_${Date.now()}`;
-              longMessages.set(msgId, text);
-              // Clean up old messages (keep last 20)
-              if (longMessages.size > 20) {
-                const firstKey = longMessages.keys().next().value;
-                if (firstKey) longMessages.delete(firstKey);
-              }
-              const keyboard = new InlineKeyboard().text("Show full message", `expand:${msgId}`);
-              await ctx.reply(truncated, { parse_mode: "Markdown", reply_markup: keyboard });
-            } else {
-              await ctx.reply(text, { parse_mode: "Markdown" });
-            }
+            await updateStatusBlock(ctx, session, "💭 Responding...");
+            await updateResponseBlock(ctx, session, text);
           }
         }
       }
@@ -363,14 +395,13 @@ async function processEvent(
     }
 
     case "user": {
-      // Tool results - optionally show truncated output
       const userEvent = event as UserEvent;
       if (userEvent.tool_use_result) {
-        const output = userEvent.tool_use_result.stdout;
-        if (output && output.length > 200) {
-          // Only show if significant output
-          await updateStatusMessage(ctx, session, `Output: ${output.slice(0, 100)}...`);
+        const output = userEvent.tool_use_result.stdout || userEvent.tool_use_result.stderr;
+        if (output && output.trim()) {
+          await updateOutputBlock(ctx, session, output);
         }
+        // Keep showing working status (don't flip to ✅ yet)
       }
       break;
     }
@@ -379,63 +410,132 @@ async function processEvent(
       const resultEvent = event as ResultEvent;
       session.isProcessing = false;
 
-      // Delete status message
-      if (session.statusMessageId) {
-        try {
-          await ctx.api.deleteMessage(chatId, session.statusMessageId);
-        } catch {
-          // Ignore deletion errors
-        }
-        session.statusMessageId = null;
+      // Final status update
+      if (session.statusMsgId) {
+        await updateStatusBlock(ctx, session, `✅ Done`);
       }
 
-      // Only show error if there is one
       if (resultEvent.is_error) {
-        await ctx.reply(`Error: ${resultEvent.result}`);
+        await ctx.reply(`❌ Error: ${resultEvent.result}`);
       }
       break;
     }
   }
 }
 
-// Format tool use for display
-function formatToolUse(tool: ToolUseContent): string {
-  const name = tool.name;
-  const input = tool.input;
 
-  switch (name) {
-    case "Bash":
-      return `\`${(input as { command?: string }).command || name}\``;
-    case "Read":
-      return `Reading \`${(input as { file_path?: string }).file_path}\``;
-    case "Edit":
-      return `Editing \`${(input as { file_path?: string }).file_path}\``;
-    case "Write":
-      return `Writing \`${(input as { file_path?: string }).file_path}\``;
-    case "Glob":
-      return `Searching \`${(input as { pattern?: string }).pattern}\``;
-    case "Grep":
-      return `Grepping \`${(input as { pattern?: string }).pattern}\``;
-    default:
-      return name;
-  }
-}
-
-// Update the status message in place
-async function updateStatusMessage(
+// Update or create the status block
+async function updateStatusBlock(
   ctx: Context,
   session: UserSession,
   text: string
 ): Promise<void> {
-  if (session.statusMessageId) {
+  if (session.statusMsgId) {
     try {
-      await ctx.api.editMessageText(
-        ctx.chat!.id,
-        session.statusMessageId,
-        text
-      );
+      await ctx.api.editMessageText(ctx.chat!.id, session.statusMsgId, text);
     } catch {
-      // Ignore edit errors (message unchanged, etc)
+      // Ignore edit errors
+    }
+  }
+}
+
+// Update or create the output block
+async function updateOutputBlock(
+  ctx: Context,
+  session: UserSession,
+  output: string
+): Promise<void> {
+  let text = output.trim();
+  if (text.length > 1000) {
+    text = text.slice(0, 1000) + "\n... (truncated)";
+  }
+  const formatted = `📤 \`\`\`\n${text}\n\`\`\``;
+
+  if (session.outputMsgId) {
+    try {
+      await ctx.api.editMessageText(ctx.chat!.id, session.outputMsgId, formatted, {
+        parse_mode: "Markdown",
+      });
+    } catch {
+      // If edit fails, send new message
+      const msg = await ctx.reply(formatted, { parse_mode: "Markdown" });
+      session.outputMsgId = msg.message_id;
+    }
+  } else {
+    const msg = await ctx.reply(formatted, { parse_mode: "Markdown" });
+    session.outputMsgId = msg.message_id;
+  }
+}
+
+// Update or create the response block
+async function updateResponseBlock(
+  ctx: Context,
+  session: UserSession,
+  text: string
+): Promise<void> {
+  const formatted = `💬 ${text}`;
+
+  // Helper to send message with Markdown fallback to plain text
+  async function sendWithFallback(content: string, keyboard?: InlineKeyboard): Promise<number> {
+    try {
+      const msg = await ctx.reply(content, {
+        parse_mode: "Markdown",
+        reply_markup: keyboard
+      });
+      return msg.message_id;
+    } catch {
+      // Markdown failed, send as plain text
+      const msg = await ctx.reply(content, { reply_markup: keyboard });
+      return msg.message_id;
+    }
+  }
+
+  async function editWithFallback(msgId: number, content: string, keyboard?: InlineKeyboard): Promise<boolean> {
+    try {
+      await ctx.api.editMessageText(ctx.chat!.id, msgId, content, {
+        parse_mode: "Markdown",
+        reply_markup: keyboard,
+      });
+      return true;
+    } catch {
+      try {
+        await ctx.api.editMessageText(ctx.chat!.id, msgId, content, {
+          reply_markup: keyboard,
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  // For long messages, use collapsible
+  if (text.length > 1500) {
+    const truncated = `💬 ${text.slice(0, 1500)}\n\n...`;
+    const msgId = `msg_${Date.now()}`;
+    longMessages.set(msgId, formatted);
+    if (longMessages.size > 20) {
+      const firstKey = longMessages.keys().next().value;
+      if (firstKey) longMessages.delete(firstKey);
+    }
+    const keyboard = new InlineKeyboard().text("Show full message", `expand:${msgId}`);
+
+    if (session.responseMsgId) {
+      const edited = await editWithFallback(session.responseMsgId, truncated, keyboard);
+      if (!edited) {
+        session.responseMsgId = await sendWithFallback(truncated, keyboard);
+      }
+    } else {
+      session.responseMsgId = await sendWithFallback(truncated, keyboard);
+    }
+  } else {
+    if (session.responseMsgId) {
+      const edited = await editWithFallback(session.responseMsgId, formatted);
+      if (!edited) {
+        session.responseMsgId = await sendWithFallback(formatted);
+      }
+    } else {
+      session.responseMsgId = await sendWithFallback(formatted);
     }
   }
 }

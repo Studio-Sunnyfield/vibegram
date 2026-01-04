@@ -10,9 +10,14 @@
   },
   "type": "module",
   "main": "src/index.ts",
+  "bin": {
+    "vibegram-cli": "src/cli.ts"
+  },
   "scripts": {
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
+    "test": "bun test",
+    "cli": "bun src/cli.ts",
     "bundle": "node scripts/bundle.js",
     "build": "node scripts/bundle.js && cd app && npm run build"
   },

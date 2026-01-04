@@ -1,4 +1,5 @@
-import type { Subprocess, FileSink } from "bun";
+import { spawn, ChildProcess } from "child_process";
+import * as fs from "fs";
 import type { ClaudeEvent } from "./types";
 
 export interface ClaudeProcessOptions {
@@ -10,10 +11,24 @@ export interface ClaudeProcessOptions {
 
 export type EventCallback = (event: ClaudeEvent) => void | Promise<void>;
 
-type ClaudeSubprocess = Subprocess<"pipe", "pipe", "pipe">;
+interface ImageContent {
+  type: "image";
+  source: {
+    type: "base64";
+    media_type: string;
+    data: string;
+  };
+}
+
+interface TextContent {
+  type: "text";
+  text: string;
+}
+
+type MessageContent = TextContent | ImageContent;
 
 export class ClaudeProcess {
-  private proc: ClaudeSubprocess | null = null;
+  private proc: ChildProcess | null = null;
   private buffer = "";
   private onEvent: EventCallback;
   private options: ClaudeProcessOptions;
@@ -23,7 +38,7 @@ export class ClaudeProcess {
     this.onEvent = onEvent;
   }
 
-  async start(initialPrompt: string): Promise<void> {
+  async start(initialPrompt: string, imagePath?: string): Promise<void> {
     const args = [
       "-p",
       "--input-format",
@@ -50,70 +65,84 @@ export class ClaudeProcess {
       args.push("--allowedTools", this.options.allowedTools.join(","));
     }
 
-    this.proc = Bun.spawn(["claude", ...args], {
+    this.proc = spawn("claude", args, {
       cwd: this.options.cwd,
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-    }) as ClaudeSubprocess;
+      stdio: ["pipe", "pipe", "pipe"],
+      env: {
+        ...process.env,
+        VIBEGRAM_SOURCE: "telegram", // Indicator for hooks to detect Telegram messages
+      },
+    });
 
-    // Start reading stdout
-    this.readStream();
+    // Handle stdout
+    this.proc.stdout?.on("data", (data: Buffer) => {
+      this.buffer += data.toString();
 
-    // Send initial prompt
-    await this.sendMessage(initialPrompt);
-  }
+      // Process complete JSON lines
+      const lines = this.buffer.split("\n");
+      this.buffer = lines.pop() || "";
 
-  private async readStream(): Promise<void> {
-    if (!this.proc) return;
-
-    const stdout = this.proc.stdout as ReadableStream<Uint8Array>;
-    const reader = stdout.getReader();
-    const decoder = new TextDecoder();
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        this.buffer += decoder.decode(value, { stream: true });
-
-        // Process complete JSON lines
-        const lines = this.buffer.split("\n");
-        this.buffer = lines.pop() || ""; // Keep incomplete line in buffer
-
-        for (const line of lines) {
-          if (line.trim()) {
-            try {
-              const event = JSON.parse(line) as ClaudeEvent;
-              await this.onEvent(event);
-            } catch (e) {
-              console.error("Failed to parse JSON:", line, e);
-            }
+      for (const line of lines) {
+        if (line.trim()) {
+          try {
+            const event = JSON.parse(line) as ClaudeEvent;
+            this.onEvent(event);
+          } catch (e) {
+            console.error("Failed to parse JSON:", line, e);
           }
         }
       }
-    } catch (e) {
-      console.error("Stream read error:", e);
-    }
+    });
+
+    this.proc.stderr?.on("data", (data: Buffer) => {
+      console.error("[claude stderr]", data.toString());
+    });
+
+    this.proc.on("close", (code) => {
+      console.log(`Claude process exited with code ${code}`);
+      this.proc = null;
+    });
+
+    // Send initial prompt with optional image
+    await this.sendMessage(initialPrompt, imagePath);
   }
 
-  async sendMessage(text: string): Promise<void> {
-    if (!this.proc) {
+  async sendMessage(text: string, imagePath?: string): Promise<void> {
+    if (!this.proc || !this.proc.stdin) {
       throw new Error("Process not started");
     }
+
+    const content: MessageContent[] = [];
+
+    // Add image if provided
+    if (imagePath && fs.existsSync(imagePath)) {
+      const imageData = fs.readFileSync(imagePath);
+      const base64 = imageData.toString("base64");
+      const ext = imagePath.split(".").pop()?.toLowerCase() || "jpg";
+      const mediaType = ext === "png" ? "image/png" : "image/jpeg";
+
+      content.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: mediaType,
+          data: base64,
+        },
+      });
+    }
+
+    // Add text
+    content.push({ type: "text", text });
 
     const message = JSON.stringify({
       type: "user",
       message: {
         role: "user",
-        content: [{ type: "text", text }],
+        content,
       },
     });
 
-    const stdin = this.proc.stdin as FileSink;
-    stdin.write(message + "\n");
-    stdin.flush();
+    this.proc.stdin.write(message + "\n");
   }
 
   async stop(): Promise<void> {
