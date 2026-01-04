@@ -1,4 +1,5 @@
 const { app, Tray, Menu, nativeImage, shell, BrowserWindow, ipcMain, dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const { spawn, fork } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -39,13 +40,19 @@ function saveConfig(config) {
   fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 }
 
-function createTrayIcon() {
-  return nativeImage.createEmpty();
+function getTrayIcon(running) {
+  // Use template image - macOS will auto-handle dark/light mode
+  const iconName = running ? 'iconTemplateRunning.png' : 'iconTemplateStopped.png';
+  const iconPath = path.join(__dirname, iconName);
+  const icon = nativeImage.createFromPath(iconPath);
+  icon.setTemplateImage(true);
+  return icon;
 }
 
 function updateTray() {
   if (tray) {
-    tray.setTitle(isRunning ? '🤓' : '😴');
+    // Switch icon based on state (filled = running, outline = stopped)
+    tray.setImage(getTrayIcon(isRunning));
     tray.setToolTip(isRunning ? 'Vibegram: Running' : 'Vibegram: Stopped');
   }
   buildMenu();
@@ -58,7 +65,7 @@ function buildMenu() {
   const menu = Menu.buildFromTemplate([
     { label: 'Vibegram', enabled: false },
     { type: 'separator' },
-    { label: isRunning ? '🤓 Running' : '😴 Stopped', enabled: false },
+    { label: isRunning ? '🟢 Running' : '⚫ Stopped', enabled: false },
     { type: 'separator' },
     {
       label: isRunning ? 'Stop' : 'Start',
@@ -69,6 +76,15 @@ function buildMenu() {
     { type: 'separator' },
     { label: 'Open Config Folder', click: () => { ensureConfigDir(); shell.openPath(configDir); } },
     { type: 'separator' },
+    { label: 'Check for Updates...', click: () => {
+      autoUpdater.checkForUpdates().then((result) => {
+        if (!result || !result.updateInfo || result.updateInfo.version === app.getVersion()) {
+          dialog.showMessageBox({ type: 'info', title: 'No Updates', message: 'You are running the latest version.' });
+        }
+      }).catch(() => {
+        dialog.showMessageBox({ type: 'error', title: 'Update Check Failed', message: 'Could not check for updates.' });
+      });
+    }},
     { label: 'Quit', click: () => { stopBot(); app.quit(); } }
   ]);
   tray.setContextMenu(menu);
@@ -217,7 +233,7 @@ app.whenReady().then(() => {
   // Hide dock icon
   app.dock?.hide();
 
-  tray = new Tray(createTrayIcon());
+  tray = new Tray(getTrayIcon(false));
   updateTray();
 
   // Check if configured
@@ -229,6 +245,24 @@ app.whenReady().then(() => {
     // Open settings for first-time setup
     openSettings();
   }
+
+  // Auto-updater setup
+  autoUpdater.autoDownload = false;
+  autoUpdater.checkForUpdates().catch(() => {}); // Silent check on startup
+
+  autoUpdater.on('update-available', (info) => {
+    dialog.showMessageBox({
+      type: 'info',
+      title: 'Update Available',
+      message: `Vibegram ${info.version} is available.`,
+      buttons: ['Download', 'Later'],
+      defaultId: 0
+    }).then(({ response }) => {
+      if (response === 0) {
+        shell.openExternal('https://github.com/Studio-Sunnyfield/vibegram/releases/latest');
+      }
+    });
+  });
 });
 
 app.on('window-all-closed', (e) => {

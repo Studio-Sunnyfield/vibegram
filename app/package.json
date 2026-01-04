@@ -20,24 +20,42 @@
     "productName": "Vibegram",
     "mac": {
       "category": "public.app-category.developer-tools",
+      "icon": "icon.icns",
       "target": [
         {
           "target": "dmg",
-          "arch": ["universal"]
+          "arch": [
+            "universal"
+          ]
         },
         {
           "target": "zip",
-          "arch": ["universal"]
+          "arch": [
+            "universal"
+          ]
         }
       ]
     },
     "files": [
       "main.js",
       "settings.html",
-      "bot-bundle.cjs"
+      "bot-bundle.cjs",
+      "icon.icns",
+      "iconTemplateRunning.png",
+      "iconTemplateRunning@2x.png",
+      "iconTemplateStopped.png",
+      "iconTemplateStopped@2x.png"
     ],
     "asarUnpack": [
       "bot-bundle.cjs"
-    ]
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "Studio-Sunnyfield",
+      "repo": "vibegram"
+    }
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
   }
 }
