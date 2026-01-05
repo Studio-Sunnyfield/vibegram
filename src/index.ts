@@ -11,6 +11,7 @@ interface Config {
   token: string;
   allowedUserId: number;
   projectRoot: string;
+  agent?: "claude" | "opencode";
   streamMode?: "compact" | "full";
 }
 
@@ -79,10 +80,12 @@ const bot = createBot({
   token: config.token,
   allowedUserId: config.allowedUserId,
   projectRoot: config.projectRoot,
+  agent: config.agent,
   streamMode: config.streamMode,
 });
 
-console.log("Starting Claude Telegram Bridge...");
+console.log("Starting Vibegram...");
+console.log(`Agent: ${config.agent || "claude"}`);
 console.log(`Allowed user: ${config.allowedUserId}`);
 console.log(`Project root: ${config.projectRoot}`);
 

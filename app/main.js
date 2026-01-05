@@ -8,6 +8,30 @@ const os = require('os');
 // Config paths
 const configDir = path.join(os.homedir(), 'Library', 'Application Support', 'Vibegram');
 const configPath = path.join(configDir, 'config.json');
+const logPath = path.join(configDir, 'vibegram.log');
+
+// File-based logging
+function log(...args) {
+  const timestamp = new Date().toISOString();
+  const message = `[${timestamp}] ${args.join(' ')}\n`;
+  console.log(...args);
+  try {
+    fs.appendFileSync(logPath, message);
+  } catch (e) {
+    // Ignore write errors
+  }
+}
+
+function logError(...args) {
+  const timestamp = new Date().toISOString();
+  const message = `[${timestamp}] ERROR: ${args.join(' ')}\n`;
+  console.error(...args);
+  try {
+    fs.appendFileSync(logPath, message);
+  } catch (e) {
+    // Ignore write errors
+  }
+}
 
 let tray = null;
 let botProcess = null;
@@ -102,7 +126,7 @@ function startBot() {
   // Validate cwd exists
   const cwd = config.projectRoot || os.homedir();
   if (!fs.existsSync(cwd)) {
-    console.error('Project directory does not exist:', cwd);
+    logError('Project directory does not exist:', cwd);
     openSettings();
     return;
   }
@@ -116,8 +140,9 @@ function startBot() {
     botPath = botPath.replace('app.asar', 'app.asar.unpacked');
   }
 
-  console.log('Starting bot from:', botPath);
-  console.log('Working directory:', cwd);
+  log('Starting bot from:', botPath);
+  log('Working directory:', cwd);
+  log('Config:', JSON.stringify({ token: config.token ? '***' : 'missing', allowedUserId: config.allowedUserId, projectRoot: config.projectRoot }));
 
   // Use shell to source user's PATH and find node
   botProcess = spawn(`source ~/.zshrc 2>/dev/null; source ~/.bashrc 2>/dev/null; node "${botPath}"`, {
@@ -127,18 +152,18 @@ function startBot() {
     env: { ...process.env, PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:' + (process.env.PATH || '') }
   });
 
-  botProcess.stdout.on('data', (data) => console.log(`[bot] ${data}`));
-  botProcess.stderr.on('data', (data) => console.error(`[bot] ${data}`));
+  botProcess.stdout.on('data', (data) => log(`[bot:stdout] ${data.toString().trim()}`));
+  botProcess.stderr.on('data', (data) => logError(`[bot:stderr] ${data.toString().trim()}`));
 
-  botProcess.on('close', (code) => {
-    console.log(`Bot exited with code ${code}`);
+  botProcess.on('close', (code, signal) => {
+    log(`Bot process exited - code: ${code}, signal: ${signal}`);
     isRunning = false;
     botProcess = null;
     updateTray();
   });
 
   botProcess.on('error', (err) => {
-    console.error('Bot error:', err);
+    logError('Bot process error:', err.message, err.stack);
     isRunning = false;
     botProcess = null;
     updateTray();
@@ -233,15 +258,22 @@ app.whenReady().then(() => {
   // Hide dock icon
   app.dock?.hide();
 
+  log('=== Vibegram started ===');
+  log('App version:', app.getVersion());
+  log('Electron version:', process.versions.electron);
+  log('Node version:', process.versions.node);
+
   tray = new Tray(getTrayIcon(false));
   updateTray();
 
   // Check if configured
   const config = loadConfig();
   if (config && config.token && config.allowedUserId) {
+    log('Config found, auto-starting bot');
     // Auto-start bot
     startBot();
   } else {
+    log('No config found, opening settings');
     // Open settings for first-time setup
     openSettings();
   }

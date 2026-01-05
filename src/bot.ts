@@ -1,51 +1,40 @@
 import { Bot, InlineKeyboard, type Context } from "grammy";
-import { ClaudeProcess, type ClaudeProcessOptions } from "./claude";
-import { execSync, exec } from "child_process";
+import { ClaudeAgent, OpenCodeAgent } from "./agent";
+import type { CodingAgent, NormalizedEvent, AgentOptions } from "./agent";
+import { exec } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
-import { formatToolUse, stripThinkingTags, resolvePath } from "./utils";
-import type {
-  ClaudeEvent,
-  AssistantEvent,
-  UserEvent,
-  ResultEvent,
-  SystemInitEvent,
-  ToolUseContent,
-  TextContent,
-} from "./types";
+import { formatToolUse, stripThinkingTags } from "./utils";
 
 interface BotConfig {
   token: string;
   allowedUserId: number;
   projectRoot?: string;
   streamMode?: "compact" | "full";
+  agent?: "claude" | "opencode";
 }
 
 interface UserSession {
-  claude: ClaudeProcess | null;
+  agent: CodingAgent | null;
   sessionId: string | null;
   cwd: string;
-  // Message IDs for the 3 blocks
   statusMsgId: number | null;
   outputMsgId: number | null;
   responseMsgId: number | null;
-  // Current status text
   lastStatus: string;
   isProcessing: boolean;
 }
 
-// Store long messages for "Show more" buttons
 const longMessages = new Map<string, string>();
 
 export function createBot(config: BotConfig): Bot {
   const bot = new Bot(config.token);
   const sessions = new Map<number, UserSession>();
 
-  // Get or create session for user
   function getSession(userId: number): UserSession {
     if (!sessions.has(userId)) {
       sessions.set(userId, {
-        claude: null,
+        agent: null,
         sessionId: null,
         cwd: config.projectRoot || process.env.HOME || "/",
         statusMsgId: null,
@@ -58,17 +47,15 @@ export function createBot(config: BotConfig): Bot {
     return sessions.get(userId)!;
   }
 
-  // Kill Claude and save session for resume
-  async function killClaude(session: UserSession): Promise<void> {
-    if (session.claude) {
-      await session.claude.stop();
-      session.claude = null;
+  async function killAgent(session: UserSession): Promise<void> {
+    if (session.agent) {
+      await session.agent.stop();
+      session.agent = null;
     }
     session.sessionId = null;
     session.isProcessing = false;
   }
 
-  // Reset message blocks for new request
   function resetMessageBlocks(session: UserSession): void {
     session.statusMsgId = null;
     session.outputMsgId = null;
@@ -76,7 +63,14 @@ export function createBot(config: BotConfig): Bot {
     session.lastStatus = "";
   }
 
-  // Debug: log all updates
+  function createAgent(options: AgentOptions, onEvent: (event: NormalizedEvent) => void): CodingAgent {
+    if (config.agent === "opencode") {
+      return new OpenCodeAgent(options, onEvent);
+    }
+    return new ClaudeAgent(options, onEvent);
+  }
+
+  // Debug middleware
   bot.use(async (ctx, next) => {
     console.log(`[UPDATE] ${ctx.update.update_id} from ${ctx.from?.id} (${ctx.from?.username})`);
     await next();
@@ -93,7 +87,6 @@ export function createBot(config: BotConfig): Bot {
     await next();
   });
 
-  // /start command
   bot.command("start", async (ctx) => {
     const session = getSession(ctx.from!.id);
     await ctx.reply(
@@ -109,25 +102,22 @@ export function createBot(config: BotConfig): Bot {
     );
   });
 
-  // /new command - clear session
   bot.command("new", async (ctx) => {
     const session = getSession(ctx.from!.id);
-    await killClaude(session);
+    await killAgent(session);
     await ctx.reply("Started new conversation.");
   });
 
-  // /stop command
   bot.command("stop", async (ctx) => {
     const session = getSession(ctx.from!.id);
     if (session.isProcessing) {
-      await killClaude(session);
+      await killAgent(session);
       await ctx.reply("Stopped. Use /resume to continue.");
     } else {
       await ctx.reply("No task running.");
     }
   });
 
-  // /status command
   bot.command("status", async (ctx) => {
     const session = getSession(ctx.from!.id);
     const status = [
@@ -139,7 +129,6 @@ export function createBot(config: BotConfig): Bot {
     await ctx.reply(status, { parse_mode: "Markdown" });
   });
 
-  // Handle "Show full message" callback
   bot.callbackQuery(/^expand:(.+)/, async (ctx) => {
     const msgId = ctx.match[1];
     const fullText = longMessages.get(msgId);
@@ -158,7 +147,6 @@ export function createBot(config: BotConfig): Bot {
     longMessages.delete(msgId);
   });
 
-  // Helper to get last session summary
   function getLastSessionSummary(cwd: string): string | null {
     try {
       const projectKey = cwd.replace(/\//g, "-");
@@ -170,7 +158,6 @@ export function createBot(config: BotConfig): Bot {
       );
       if (!fs.existsSync(sessionDir)) return null;
 
-      // Find most recent non-empty .jsonl file
       const files = fs
         .readdirSync(sessionDir)
         .filter((f) => f.endsWith(".jsonl"))
@@ -185,7 +172,6 @@ export function createBot(config: BotConfig): Bot {
 
       if (files.length === 0) return null;
 
-      // Read the file and find last summary
       const content = fs.readFileSync(files[0].path, "utf-8");
       const lines = content.split("\n").filter((l) => l.trim());
       for (let i = lines.length - 1; i >= 0; i--) {
@@ -202,10 +188,9 @@ export function createBot(config: BotConfig): Bot {
     }
   }
 
-  // /resume command
   bot.command("resume", async (ctx) => {
     const session = getSession(ctx.from!.id);
-    await killClaude(session);
+    await killAgent(session);
     session.sessionId = "continue";
 
     const summary = getLastSessionSummary(session.cwd);
@@ -218,61 +203,57 @@ export function createBot(config: BotConfig): Bot {
     await ctx.reply(msg, { parse_mode: "Markdown" });
   });
 
-  // /cd command
   bot.command("cd", async (ctx) => {
     const session = getSession(ctx.from!.id);
-    let path = ctx.match?.trim();
-    if (!path) {
+    let targetPath = ctx.match?.trim();
+    if (!targetPath) {
       await ctx.reply(`Current directory: \`${session.cwd}\`\n\nUsage: \`/cd <path>\``, {
         parse_mode: "Markdown",
       });
       return;
     }
 
-    if (path.startsWith("~")) {
-      path = path.replace("~", process.env.HOME || "");
+    if (targetPath.startsWith("~")) {
+      targetPath = targetPath.replace("~", process.env.HOME || "");
     }
-    if (!path.startsWith("/")) {
-      path = `${session.cwd}/${path}`;
+    if (!targetPath.startsWith("/")) {
+      targetPath = `${session.cwd}/${targetPath}`;
     }
 
-    if (session.claude) {
-      await session.claude.stop();
-      session.claude = null;
+    if (session.agent) {
+      await session.agent.stop();
+      session.agent = null;
     }
     session.sessionId = null;
-    session.cwd = path;
+    session.cwd = targetPath;
 
-    await ctx.reply(`Changed to: \`${path}\``, { parse_mode: "Markdown" });
+    await ctx.reply(`Changed to: \`${targetPath}\``, { parse_mode: "Markdown" });
   });
 
-  // Handle ! prefix for direct bash commands
   bot.hears(/^!(.+)/, async (ctx) => {
     const session = getSession(ctx.from!.id);
     const command = ctx.match[1];
 
-    // Handle !cd specially
     if (command.startsWith("cd ")) {
-      let path = command.slice(3).trim();
-      if (path.startsWith("~")) {
-        path = path.replace("~", process.env.HOME || "");
+      let targetPath = command.slice(3).trim();
+      if (targetPath.startsWith("~")) {
+        targetPath = targetPath.replace("~", process.env.HOME || "");
       }
-      if (!path.startsWith("/")) {
-        path = `${session.cwd}/${path}`;
+      if (!targetPath.startsWith("/")) {
+        targetPath = `${session.cwd}/${targetPath}`;
       }
-      const parts = path.split("/").filter(Boolean);
+      const parts = targetPath.split("/").filter(Boolean);
       const resolved: string[] = [];
       for (const part of parts) {
         if (part === "..") resolved.pop();
         else if (part !== ".") resolved.push(part);
       }
       session.cwd = "/" + resolved.join("/");
-      await killClaude(session);
+      await killAgent(session);
       await ctx.reply(`\`${session.cwd}\``, { parse_mode: "Markdown" });
       return;
     }
 
-    // Run bash command using Node.js
     exec(command, { cwd: session.cwd }, async (error, stdout, stderr) => {
       let output = stdout || stderr || "(no output)";
       if (output.length > 4000) {
@@ -283,23 +264,20 @@ export function createBot(config: BotConfig): Bot {
     });
   });
 
-  // Handle photo messages
   bot.on("message:photo", async (ctx) => {
     const session = getSession(ctx.from!.id);
     const caption = ctx.message.caption || "What's in this image?";
 
-    // Get the largest photo
     const photo = ctx.message.photo[ctx.message.photo.length - 1];
     const file = await ctx.api.getFile(photo.file_id);
     const fileUrl = `https://api.telegram.org/file/bot${config.token}/${file.file_path}`;
 
-    // Download to temp file
     const tempPath = `/tmp/tgcc_image_${Date.now()}.jpg`;
     const https = await import("https");
-    const fs = await import("fs");
+    const fsModule = await import("fs");
 
     await new Promise<void>((resolve, reject) => {
-      const fileStream = fs.createWriteStream(tempPath);
+      const fileStream = fsModule.createWriteStream(tempPath);
       https.get(fileUrl, (response) => {
         response.pipe(fileStream);
         fileStream.on("finish", () => {
@@ -309,50 +287,47 @@ export function createBot(config: BotConfig): Bot {
       }).on("error", reject);
     });
 
-    // Send to Claude with image
     await handleMessage(ctx, session, caption, tempPath);
   });
 
-  // Handle text messages
   bot.on("message:text", async (ctx) => {
     const session = getSession(ctx.from!.id);
     const text = ctx.message.text;
     await handleMessage(ctx, session, text);
   });
 
-  // Shared message handler
   async function handleMessage(ctx: Context, session: UserSession, text: string, imagePath?: string) {
-    if (session.isProcessing && session.claude) {
-      await session.claude.sendMessage(text, imagePath);
+    if (session.isProcessing && session.agent) {
+      await session.agent.sendMessage(text, imagePath);
       return;
     }
 
     session.isProcessing = true;
     resetMessageBlocks(session);
 
-    // Send initial status (no parse_mode to ensure emoji shows)
     const statusMsg = await ctx.reply("💭 Thinking...");
     session.statusMsgId = statusMsg.message_id;
     session.lastStatus = "Thinking...";
 
-    const handleEvent = async (event: ClaudeEvent) => {
-      await processEvent(ctx, session, event, config.streamMode || "compact");
+    const isFullMode = config.streamMode === "full";
+
+    const handleEvent = async (event: NormalizedEvent) => {
+      await processNormalizedEvent(ctx, session, event, isFullMode);
     };
 
-    const options: ClaudeProcessOptions = {
+    const options: AgentOptions = {
       cwd: session.cwd,
       permissionMode: "bypassPermissions",
       sessionId: session.sessionId || undefined,
     };
 
-    session.claude = new ClaudeProcess(options, handleEvent);
+    session.agent = createAgent(options, handleEvent);
 
-    // Handle process exit without result event
-    session.claude.setOnClose(async (code, stderr) => {
+    session.agent.setOnClose(async (code, stderr) => {
       if (session.isProcessing) {
         session.isProcessing = false;
         const errorMsg = stderr.trim() || `Process exited with code ${code}`;
-        console.error("Claude exited while processing:", errorMsg);
+        console.error("Agent exited while processing:", errorMsg);
         await updateStatusBlock(ctx, session, `❌ Crashed`);
         if (errorMsg.length > 0 && errorMsg.length < 500) {
           await ctx.reply(`\`\`\`\n${errorMsg}\n\`\`\``, { parse_mode: "Markdown" });
@@ -361,9 +336,9 @@ export function createBot(config: BotConfig): Bot {
     });
 
     try {
-      await session.claude.start(text, imagePath);
+      await session.agent.start(text, imagePath);
     } catch (e) {
-      console.error("Failed to start Claude:", e);
+      console.error("Failed to start agent:", e);
       await ctx.reply("❌ Error: " + e);
       session.isProcessing = false;
     }
@@ -372,95 +347,84 @@ export function createBot(config: BotConfig): Bot {
   return bot;
 }
 
-async function processEvent(
+async function processNormalizedEvent(
   ctx: Context,
   session: UserSession,
-  event: ClaudeEvent,
-  streamMode: "compact" | "full"
+  event: NormalizedEvent,
+  isFullMode: boolean
 ): Promise<void> {
-  const chatId = ctx.chat!.id;
-  const isFullMode = streamMode === "full";
-
   switch (event.type) {
-    case "system": {
-      const sysEvent = event as SystemInitEvent;
-      if (sysEvent.subtype === "init") {
-        session.sessionId = sysEvent.session_id;
-      }
+    case "init":
+      session.sessionId = event.sessionId;
       break;
-    }
 
-    case "assistant": {
-      const assistantEvent = event as AssistantEvent;
-      for (const content of assistantEvent.message.content) {
-        if (content.type === "tool_use") {
-          const toolContent = content as ToolUseContent;
-          const toolDisplay = formatToolUse(toolContent);
-          session.lastStatus = toolDisplay;
-          if (isFullMode) {
-            await ctx.reply(`🔧 ${toolDisplay}`);
-          } else {
-            await updateStatusBlock(ctx, session, `🔧 ${toolDisplay}`);
-          }
-        } else if (content.type === "text") {
-          const textContent = content as TextContent;
-          const text = stripThinkingTags(textContent.text);
-          if (text) {
-            if (isFullMode) {
-              await ctx.reply(`💬 ${text}`, { parse_mode: "Markdown" }).catch(() =>
-                ctx.reply(`💬 ${text}`)
-              );
-            } else {
-              await updateStatusBlock(ctx, session, "💭 Responding...");
-              await updateResponseBlock(ctx, session, text);
-            }
-          }
-        }
-      }
-      break;
-    }
-
-    case "user": {
-      const userEvent = event as UserEvent;
-      if (userEvent.tool_use_result) {
-        const output = userEvent.tool_use_result.stdout || userEvent.tool_use_result.stderr;
-        if (output && output.trim()) {
-          if (isFullMode) {
-            let text = output.trim();
-            if (text.length > 1000) {
-              text = text.slice(0, 1000) + "\n... (truncated)";
-            }
-            await ctx.reply(`📤 \`\`\`\n${text}\n\`\`\``, { parse_mode: "Markdown" });
-          } else {
-            await updateOutputBlock(ctx, session, output);
-          }
-        }
-      }
-      break;
-    }
-
-    case "result": {
-      const resultEvent = event as ResultEvent;
-      session.isProcessing = false;
-
+    case "tool_use": {
+      const toolDisplay = formatToolUse({
+        type: "tool_use",
+        id: "",
+        name: event.tool,
+        input: event.input || {},
+      });
+      session.lastStatus = toolDisplay;
       if (isFullMode) {
-        await ctx.reply(`✅ Done (${(resultEvent.duration_ms / 1000).toFixed(1)}s)`);
+        await ctx.reply(`🔧 ${toolDisplay}`);
+      } else {
+        await updateStatusBlock(ctx, session, `🔧 ${toolDisplay}`);
+      }
+      break;
+    }
+
+    case "tool_output": {
+      if (event.output?.trim()) {
+        if (isFullMode) {
+          let text = event.output.trim();
+          if (text.length > 1000) {
+            text = text.slice(0, 1000) + "\n... (truncated)";
+          }
+          await ctx.reply(`📤 \`\`\`\n${text}\n\`\`\``, { parse_mode: "Markdown" });
+        } else {
+          await updateOutputBlock(ctx, session, event.output);
+        }
+      }
+      break;
+    }
+
+    case "text": {
+      const text = stripThinkingTags(event.content || "");
+      if (text) {
+        if (isFullMode) {
+          await ctx.reply(`💬 ${text}`, { parse_mode: "Markdown" }).catch(() =>
+            ctx.reply(`💬 ${text}`)
+          );
+        } else {
+          await updateStatusBlock(ctx, session, "💭 Responding...");
+          await updateResponseBlock(ctx, session, text);
+        }
+      }
+      break;
+    }
+
+    case "error":
+      await ctx.reply(`❌ Error: ${event.content}`);
+      break;
+
+    case "done":
+      session.isProcessing = false;
+      if (isFullMode) {
+        const duration = event.durationMs ? `(${(event.durationMs / 1000).toFixed(1)}s)` : "";
+        await ctx.reply(`✅ Done ${duration}`);
       } else {
         if (session.statusMsgId) {
           await updateStatusBlock(ctx, session, `✅ Done`);
         }
       }
-
-      if (resultEvent.is_error) {
-        await ctx.reply(`❌ Error: ${resultEvent.result}`);
+      if (event.isError && event.content) {
+        await ctx.reply(`❌ Error: ${event.content}`);
       }
       break;
-    }
   }
 }
 
-
-// Update or create the status block
 async function updateStatusBlock(
   ctx: Context,
   session: UserSession,
@@ -475,7 +439,6 @@ async function updateStatusBlock(
   }
 }
 
-// Update or create the output block
 async function updateOutputBlock(
   ctx: Context,
   session: UserSession,
@@ -493,7 +456,6 @@ async function updateOutputBlock(
         parse_mode: "Markdown",
       });
     } catch {
-      // If edit fails, send new message
       const msg = await ctx.reply(formatted, { parse_mode: "Markdown" });
       session.outputMsgId = msg.message_id;
     }
@@ -503,7 +465,6 @@ async function updateOutputBlock(
   }
 }
 
-// Update or create the response block
 async function updateResponseBlock(
   ctx: Context,
   session: UserSession,
@@ -511,7 +472,6 @@ async function updateResponseBlock(
 ): Promise<void> {
   const formatted = `💬 ${text}`;
 
-  // Helper to send message with Markdown fallback to plain text
   async function sendWithFallback(content: string, keyboard?: InlineKeyboard): Promise<number> {
     try {
       const msg = await ctx.reply(content, {
@@ -520,7 +480,6 @@ async function updateResponseBlock(
       });
       return msg.message_id;
     } catch {
-      // Markdown failed, send as plain text
       const msg = await ctx.reply(content, { reply_markup: keyboard });
       return msg.message_id;
     }
@@ -545,7 +504,6 @@ async function updateResponseBlock(
     }
   }
 
-  // For long messages, use collapsible
   if (text.length > 1500) {
     const truncated = `💬 ${text.slice(0, 1500)}\n\n...`;
     const msgId = `msg_${Date.now()}`;

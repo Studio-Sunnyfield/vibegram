@@ -95,6 +95,15 @@
   </div>
   <div class="hint">Where Claude Code will run by default</div>
 
+  <label>Coding Agent</label>
+  <div class="input-row">
+    <select id="agent">
+      <option value="claude">Claude Code</option>
+      <option value="opencode">OpenCode</option>
+    </select>
+  </div>
+  <div class="hint">Which AI coding assistant to use</div>
+
   <label>Message Display Mode</label>
   <div class="input-row">
     <select id="streamMode">
@@ -119,6 +128,7 @@
       document.getElementById('token').value = config.token || '';
       document.getElementById('userId').value = config.allowedUserId || '';
       document.getElementById('projectRoot').value = config.projectRoot || os.homedir();
+      document.getElementById('agent').value = config.agent || 'claude';
       document.getElementById('streamMode').value = config.streamMode || 'compact';
     }
 
@@ -140,6 +150,7 @@
       const token = document.getElementById('token').value.trim();
       const userId = document.getElementById('userId').value.trim();
       const projectRoot = document.getElementById('projectRoot').value.trim();
+      const agent = document.getElementById('agent').value;
       const streamMode = document.getElementById('streamMode').value;
 
       // Validate token format
@@ -180,6 +191,7 @@
         token,
         allowedUserId: parseInt(userId),
         projectRoot: projectRoot || os.homedir(),
+        agent,
         streamMode
       });
 
