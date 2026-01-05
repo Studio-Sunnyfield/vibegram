@@ -11,6 +11,7 @@ interface Config {
   token: string;
   allowedUserId: number;
   projectRoot: string;
+  streamMode?: "compact" | "full";
 }
 
 function loadConfig(): Config | null {
@@ -78,6 +79,7 @@ const bot = createBot({
   token: config.token,
   allowedUserId: config.allowedUserId,
   projectRoot: config.projectRoot,
+  streamMode: config.streamMode,
 });
 
 console.log("Starting Claude Telegram Bridge...");

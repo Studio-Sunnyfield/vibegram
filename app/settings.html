@@ -23,11 +23,25 @@
       color: #fff;
       font-size: 14px;
     }
-    input:focus { outline: none; border-color: #007AFF; }
+    input:focus, select:focus { outline: none; border-color: #007AFF; }
+    select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #444;
+      border-radius: 6px;
+      background: #2d2d2d;
+      color: #fff;
+      font-size: 14px;
+    }
     .hint { font-size: 11px; color: #666; margin-top: 4px; }
     .input-row { display: flex; gap: 8px; }
     .input-row input { flex: 1; }
     .input-row button { flex-shrink: 0; }
+    .toggle-vis {
+      padding: 8px 12px;
+      font-size: 14px;
+      min-width: 40px;
+    }
     .buttons { margin-top: 20px; display: flex; gap: 10px; }
     button {
       padding: 10px 20px;
@@ -61,11 +75,17 @@
   <div id="status" class="status" style="display: none;"></div>
 
   <label>Telegram Bot Token</label>
-  <input type="password" id="token" placeholder="123456789:ABCdefGHI...">
+  <div class="input-row">
+    <input type="password" id="token" placeholder="123456789:ABCdefGHI...">
+    <button class="secondary toggle-vis" onclick="toggleVisibility('token', this)">👁</button>
+  </div>
   <div class="hint">Get from @BotFather on Telegram</div>
 
   <label>Your Telegram User ID</label>
-  <input type="text" id="userId" placeholder="123456789">
+  <div class="input-row">
+    <input type="password" id="userId" placeholder="123456789">
+    <button class="secondary toggle-vis" onclick="toggleVisibility('userId', this)">👁</button>
+  </div>
   <div class="hint">Send /start to @userinfobot to get your ID</div>
 
   <label>Default Project Directory</label>
@@ -74,6 +94,15 @@
     <button class="secondary" onclick="browseFolder()">Browse...</button>
   </div>
   <div class="hint">Where Claude Code will run by default</div>
+
+  <label>Message Display Mode</label>
+  <div class="input-row">
+    <select id="streamMode">
+      <option value="compact">Compact (replace messages)</option>
+      <option value="full">Full history (append all)</option>
+    </select>
+  </div>
+  <div class="hint">Compact is cleaner, Full shows all tool calls and outputs</div>
 
   <div class="buttons">
     <button class="secondary" onclick="window.close()">Cancel</button>
@@ -90,6 +119,7 @@
       document.getElementById('token').value = config.token || '';
       document.getElementById('userId').value = config.allowedUserId || '';
       document.getElementById('projectRoot').value = config.projectRoot || os.homedir();
+      document.getElementById('streamMode').value = config.streamMode || 'compact';
     }
 
     // Validate bot token format: number:alphanumeric
@@ -110,6 +140,7 @@
       const token = document.getElementById('token').value.trim();
       const userId = document.getElementById('userId').value.trim();
       const projectRoot = document.getElementById('projectRoot').value.trim();
+      const streamMode = document.getElementById('streamMode').value;
 
       // Validate token format
       if (!token) {
@@ -148,7 +179,8 @@
       await ipcRenderer.invoke('save-config', {
         token,
         allowedUserId: parseInt(userId),
-        projectRoot: projectRoot || os.homedir()
+        projectRoot: projectRoot || os.homedir(),
+        streamMode
       });
 
       showStatus('Settings saved! Bot will start automatically.', 'success');
@@ -160,6 +192,17 @@
       el.textContent = message;
       el.className = 'status ' + type;
       el.style.display = 'block';
+    }
+
+    function toggleVisibility(inputId, btn) {
+      const input = document.getElementById(inputId);
+      if (input.type === 'password') {
+        input.type = 'text';
+        btn.textContent = '🙈';
+      } else {
+        input.type = 'password';
+        btn.textContent = '👁';
+      }
     }
 
     load();

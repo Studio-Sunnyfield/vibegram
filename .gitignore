@@ -37,3 +37,4 @@ AuthKey_*.p8
 *.p12
 *.cer
 CLAUDE.md
+spec-driven.md
