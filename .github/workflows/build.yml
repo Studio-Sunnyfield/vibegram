@@ -58,7 +58,8 @@ jobs:
       - name: Build and Sign (notarization disabled)
         working-directory: app
         # No APPLE_* env vars = skips notarization
-        run: npm run build
+        # --publish never = don't let electron-builder publish
+        run: npm run dist
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
