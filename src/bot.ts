@@ -18,6 +18,7 @@ interface BotConfig {
   token: string;
   allowedUserId: number;
   projectRoot?: string;
+  streamMode?: "compact" | "full";
 }
 
 interface UserSession {
@@ -335,7 +336,7 @@ export function createBot(config: BotConfig): Bot {
     session.lastStatus = "Thinking...";
 
     const handleEvent = async (event: ClaudeEvent) => {
-      await processEvent(ctx, session, event);
+      await processEvent(ctx, session, event, config.streamMode || "compact");
     };
 
     const options: ClaudeProcessOptions = {
@@ -345,6 +346,19 @@ export function createBot(config: BotConfig): Bot {
     };
 
     session.claude = new ClaudeProcess(options, handleEvent);
+
+    // Handle process exit without result event
+    session.claude.setOnClose(async (code, stderr) => {
+      if (session.isProcessing) {
+        session.isProcessing = false;
+        const errorMsg = stderr.trim() || `Process exited with code ${code}`;
+        console.error("Claude exited while processing:", errorMsg);
+        await updateStatusBlock(ctx, session, `❌ Crashed`);
+        if (errorMsg.length > 0 && errorMsg.length < 500) {
+          await ctx.reply(`\`\`\`\n${errorMsg}\n\`\`\``, { parse_mode: "Markdown" });
+        }
+      }
+    });
 
     try {
       await session.claude.start(text, imagePath);
@@ -361,9 +375,11 @@ export function createBot(config: BotConfig): Bot {
 async function processEvent(
   ctx: Context,
   session: UserSession,
-  event: ClaudeEvent
+  event: ClaudeEvent,
+  streamMode: "compact" | "full"
 ): Promise<void> {
   const chatId = ctx.chat!.id;
+  const isFullMode = streamMode === "full";
 
   switch (event.type) {
     case "system": {
@@ -381,13 +397,23 @@ async function processEvent(
           const toolContent = content as ToolUseContent;
           const toolDisplay = formatToolUse(toolContent);
           session.lastStatus = toolDisplay;
-          await updateStatusBlock(ctx, session, `🔧 ${toolDisplay}`);
+          if (isFullMode) {
+            await ctx.reply(`🔧 ${toolDisplay}`);
+          } else {
+            await updateStatusBlock(ctx, session, `🔧 ${toolDisplay}`);
+          }
         } else if (content.type === "text") {
           const textContent = content as TextContent;
           const text = stripThinkingTags(textContent.text);
           if (text) {
-            await updateStatusBlock(ctx, session, "💭 Responding...");
-            await updateResponseBlock(ctx, session, text);
+            if (isFullMode) {
+              await ctx.reply(`💬 ${text}`, { parse_mode: "Markdown" }).catch(() =>
+                ctx.reply(`💬 ${text}`)
+              );
+            } else {
+              await updateStatusBlock(ctx, session, "💭 Responding...");
+              await updateResponseBlock(ctx, session, text);
+            }
           }
         }
       }
@@ -399,9 +425,16 @@ async function processEvent(
       if (userEvent.tool_use_result) {
         const output = userEvent.tool_use_result.stdout || userEvent.tool_use_result.stderr;
         if (output && output.trim()) {
-          await updateOutputBlock(ctx, session, output);
+          if (isFullMode) {
+            let text = output.trim();
+            if (text.length > 1000) {
+              text = text.slice(0, 1000) + "\n... (truncated)";
+            }
+            await ctx.reply(`📤 \`\`\`\n${text}\n\`\`\``, { parse_mode: "Markdown" });
+          } else {
+            await updateOutputBlock(ctx, session, output);
+          }
         }
-        // Keep showing working status (don't flip to ✅ yet)
       }
       break;
     }
@@ -410,9 +443,12 @@ async function processEvent(
       const resultEvent = event as ResultEvent;
       session.isProcessing = false;
 
-      // Final status update
-      if (session.statusMsgId) {
-        await updateStatusBlock(ctx, session, `✅ Done`);
+      if (isFullMode) {
+        await ctx.reply(`✅ Done (${(resultEvent.duration_ms / 1000).toFixed(1)}s)`);
+      } else {
+        if (session.statusMsgId) {
+          await updateStatusBlock(ctx, session, `✅ Done`);
+        }
       }
 
       if (resultEvent.is_error) {

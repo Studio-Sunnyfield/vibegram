@@ -32,10 +32,16 @@ export class ClaudeProcess {
   private buffer = "";
   private onEvent: EventCallback;
   private options: ClaudeProcessOptions;
+  private onClose?: (code: number | null, stderr: string) => void;
+  private stderrBuffer = "";
 
   constructor(options: ClaudeProcessOptions, onEvent: EventCallback) {
     this.options = options;
     this.onEvent = onEvent;
+  }
+
+  setOnClose(callback: (code: number | null, stderr: string) => void): void {
+    this.onClose = callback;
   }
 
   async start(initialPrompt: string, imagePath?: string): Promise<void> {
@@ -95,12 +101,17 @@ export class ClaudeProcess {
     });
 
     this.proc.stderr?.on("data", (data: Buffer) => {
-      console.error("[claude stderr]", data.toString());
+      const text = data.toString();
+      console.error("[claude stderr]", text);
+      this.stderrBuffer += text;
     });
 
     this.proc.on("close", (code) => {
       console.log(`Claude process exited with code ${code}`);
       this.proc = null;
+      if (this.onClose) {
+        this.onClose(code, this.stderrBuffer);
+      }
     });
 
     // Send initial prompt with optional image
