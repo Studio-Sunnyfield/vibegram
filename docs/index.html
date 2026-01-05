@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vibegram - Use Claude Code from anywhere</title>
+  <meta name="description" content="Voice-first mobile coding. Control Claude Code from your phone via Telegram.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            heading: ['Space Grotesk', 'sans-serif'],
+            mono: ['Space Mono', 'monospace'],
+          },
+          colors: {
+            'pop-yellow': '#FFDE59',
+            'pop-pink': '#FF6B9D',
+            'pop-blue': '#5CE1E6',
+            'pop-green': '#7ED957',
+            'pop-purple': '#CB6CE6',
+            'pop-orange': '#FF914D',
+            'brutal-black': '#1a1a1a',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Space Grotesk', sans-serif;
+      background: #FFFEF0;
+      color: #1a1a1a;
+    }
+    .brutal-shadow {
+      box-shadow: 4px 4px 0px #1a1a1a;
+    }
+    .brutal-shadow-lg {
+      box-shadow: 8px 8px 0px #1a1a1a;
+    }
+    .brutal-border {
+      border: 3px solid #1a1a1a;
+    }
+    .hover-shift {
+      transition: transform 0.1s ease, box-shadow 0.1s ease;
+    }
+    .hover-shift:hover {
+      transform: translate(-2px, -2px);
+      box-shadow: 6px 6px 0px #1a1a1a;
+    }
+    .hover-shift:active {
+      transform: translate(2px, 2px);
+      box-shadow: 2px 2px 0px #1a1a1a;
+    }
+    @keyframes marquee {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+    .marquee {
+      animation: marquee 30s linear infinite;
+    }
+    @keyframes wiggle {
+      0%, 100% { transform: rotate(-2deg); }
+      50% { transform: rotate(2deg); }
+    }
+    .wiggle:hover {
+      animation: wiggle 0.3s ease-in-out infinite;
+    }
+    .rotate-text {
+      display: inline-block;
+    }
+    @keyframes fadeInOut {
+      0%, 100% { opacity: 0; transform: translateY(10px); }
+      10%, 90% { opacity: 1; transform: translateY(0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .marquee, .wiggle:hover { animation: none; }
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+  <!-- Marquee Banner -->
+  <div class="bg-brutal-black text-pop-yellow py-2 overflow-hidden brutal-border border-l-0 border-r-0 border-t-0">
+    <div class="marquee whitespace-nowrap font-mono text-sm">
+      <span class="inline-block px-8">CERTIFIED COUCH-COMPATIBLE</span>
+      <span class="inline-block px-8">★</span>
+      <span class="inline-block px-8">NO VMS NO SSH NO BULLSHIT</span>
+      <span class="inline-block px-8">★</span>
+      <span class="inline-block px-8">GRASS-TOUCHING ENABLED</span>
+      <span class="inline-block px-8">★</span>
+      <span class="inline-block px-8">REQUIRES WIFI (SORRY)</span>
+      <span class="inline-block px-8">★</span>
+      <span class="inline-block px-8">YOUR SPAGHETTI CODE STAYS LOCAL</span>
+      <span class="inline-block px-8">★</span>
+      <span class="inline-block px-8">CERTIFIED COUCH-COMPATIBLE</span>
+      <span class="inline-block px-8">★</span>
+      <span class="inline-block px-8">NO VMS NO SSH NO BULLSHIT</span>
+      <span class="inline-block px-8">★</span>
+      <span class="inline-block px-8">GRASS-TOUCHING ENABLED</span>
+      <span class="inline-block px-8">★</span>
+      <span class="inline-block px-8">REQUIRES WIFI (SORRY)</span>
+      <span class="inline-block px-8">★</span>
+      <span class="inline-block px-8">YOUR SPAGHETTI CODE STAYS LOCAL</span>
+      <span class="inline-block px-8">★</span>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="px-4 py-6">
+    <nav class="max-w-6xl mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 bg-pop-yellow brutal-border brutal-shadow flex items-center justify-center">
+          <img src="./icon.png" alt="Vibegram" class="w-8 h-8">
+        </div>
+        <span class="font-heading font-bold text-2xl">Vibegram</span>
+      </div>
+      <div class="hidden md:flex items-center gap-6 font-mono text-sm">
+        <a href="#features" class="hover:text-pop-pink transition-colors cursor-pointer">[features]</a>
+        <a href="#why" class="hover:text-pop-pink transition-colors cursor-pointer">[why tho]</a>
+        <a href="#how" class="hover:text-pop-pink transition-colors cursor-pointer">[setup]</a>
+        <a href="https://github.com/Studio-Sunnyfield/vibegram" class="hover:text-pop-pink transition-colors cursor-pointer">[github]</a>
+      </div>
+      <a href="https://github.com/Studio-Sunnyfield/vibegram/releases/latest"
+         class="bg-brutal-black text-white px-6 py-3 brutal-border hover-shift font-bold cursor-pointer">
+        Download
+      </a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Hero -->
+    <section class="px-4 py-16 md:py-24">
+      <div class="max-w-4xl mx-auto text-center">
+        <div class="inline-block bg-pop-pink brutal-border brutal-shadow px-4 py-2 mb-8 font-mono text-sm wiggle cursor-pointer">
+          macOS Menu Bar App — Free & Open Source
+        </div>
+        <h1 class="font-heading text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold leading-[1.1] mb-4">
+          Control Claude Code on your MacBook while
+        </h1>
+        <p class="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-bold mb-8">
+          <span class="bg-pop-yellow px-3 brutal-border rotate-text" id="rotating-location">on the toilet.</span>
+        </p>
+        <p class="text-lg md:text-xl mb-10 leading-relaxed">
+          <span class="font-mono bg-pop-blue px-2 brutal-border">Send voice messages, get code changes.</span>
+        </p>
+        <div class="flex flex-wrap justify-center gap-4">
+          <a href="https://github.com/Studio-Sunnyfield/vibegram/releases/latest"
+             class="bg-pop-yellow brutal-border brutal-shadow-lg px-8 py-4 font-bold text-lg hover-shift cursor-pointer inline-flex items-center gap-2">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+            Download for macOS
+          </a>
+          <a href="https://github.com/Studio-Sunnyfield/vibegram"
+             class="bg-white brutal-border brutal-shadow px-8 py-4 font-bold text-lg hover-shift cursor-pointer inline-flex items-center gap-2">
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+            Source Code
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Why Not Cloud -->
+    <section id="why" class="px-4 py-16 bg-brutal-black text-white">
+      <div class="max-w-6xl mx-auto">
+        <h2 class="font-heading text-4xl md:text-5xl font-bold text-center mb-6">
+          <span class="text-pop-yellow">No VMs.</span> <span class="text-pop-pink">No SSH.</span> <span class="text-pop-blue">No "wait which server was that on again?"</span>
+        </h2>
+        <p class="text-xl md:text-2xl text-center max-w-4xl mx-auto leading-relaxed text-gray-300">
+          Your janky MCP servers. Your cursed scripts. Your <span class="bg-pop-purple text-brutal-black px-1">47 half-finished side projects.</span> All still on your laptop where they belong.
+          <br><br>
+          Claude runs on <span class="text-pop-green">YOUR</span> machine. With <span class="text-pop-green">YOUR</span> mess. The way god intended.
+        </p>
+      </div>
+    </section>
+
+    <!-- Why Tho - The Real Reasons -->
+    <section id="features" class="px-4 py-16 bg-pop-yellow">
+      <div class="max-w-6xl mx-auto">
+        <h2 class="font-heading text-4xl md:text-5xl font-bold text-center mb-4">
+          Ok but actually why
+        </h2>
+        <p class="text-center text-xl mb-12 font-mono">(the boring practical reasons)</p>
+
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div class="bg-white brutal-border brutal-shadow p-6 hover-shift cursor-pointer">
+            <h3 class="font-bold text-xl mb-2 flex items-center gap-2">
+              <span class="bg-pop-pink brutal-border px-2 py-1 text-sm">01</span>
+              No Context Switching
+            </h3>
+            <p>Your main machine. Your branches. Your 47 uncommitted files. <span class="bg-pop-blue px-1">Single source of truth.</span> Pick up exactly where you left off.</p>
+          </div>
+
+          <div class="bg-white brutal-border brutal-shadow p-6 hover-shift cursor-pointer">
+            <h3 class="font-bold text-xl mb-2 flex items-center gap-2">
+              <span class="bg-pop-blue brutal-border px-2 py-1 text-sm">02</span>
+              Your Whole Setup, Already There
+            </h3>
+            <p>MCPs, env files, that script you wrote at 3am. No rebuilding your dev environment in some sandboxed playground. <span class="font-mono text-sm bg-pop-pink px-1">(looking at you, Lovable)</span></p>
+          </div>
+
+          <div class="bg-white brutal-border brutal-shadow p-6 hover-shift cursor-pointer">
+            <h3 class="font-bold text-xl mb-2 flex items-center gap-2">
+              <span class="bg-pop-green brutal-border px-2 py-1 text-sm">03</span>
+              Full Claude Code
+            </h3>
+            <p>Not Claude-lite. Not a wrapper. <span class="bg-pop-yellow px-1">The whole ecosystem</span> — hooks, skills, MCP servers. opencode and other agents coming soon.</p>
+          </div>
+
+          <div class="bg-white brutal-border brutal-shadow p-6 hover-shift cursor-pointer">
+            <h3 class="font-bold text-xl mb-2 flex items-center gap-2">
+              <span class="bg-pop-purple brutal-border px-2 py-1 text-sm text-white">04</span>
+              For The Gaps
+            </h3>
+            <p>This doesn't replace Devin. This is for <span class="bg-pop-orange px-1">real devs who happen to be AFK.</span> Meetings, commutes, couches.</p>
+          </div>
+
+          <div class="bg-white brutal-border brutal-shadow p-6 hover-shift cursor-pointer">
+            <h3 class="font-bold text-xl mb-2 flex items-center gap-2">
+              <span class="bg-pop-orange brutal-border px-2 py-1 text-sm">05</span>
+              Actually Fast
+            </h3>
+            <p>No spinning up VMs. No cloning repos. No docker rebuild for a one-line fix. Just <span class="font-mono bg-brutal-black text-white px-1">send message → get code.</span></p>
+          </div>
+
+          <div class="bg-white brutal-border brutal-shadow p-6 hover-shift cursor-pointer">
+            <h3 class="font-bold text-xl mb-2 flex items-center gap-2">
+              <span class="bg-brutal-black text-white brutal-border px-2 py-1 text-sm">06</span>
+              It's Free lol
+            </h3>
+            <p><span class="font-mono bg-pop-green px-1">$0.</span> Open source. We don't know how Stripe works and at this point we're too afraid to ask.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section id="how" class="px-4 py-16">
+      <div class="max-w-6xl mx-auto">
+        <h2 class="font-heading text-4xl md:text-5xl font-bold text-center mb-4">
+          Setup in 2 minutes
+        </h2>
+        <p class="text-center text-xl mb-12 font-mono">(literally, we timed it)</p>
+
+        <div class="grid md:grid-cols-3 gap-8">
+          <div class="text-center">
+            <div class="w-20 h-20 bg-pop-pink brutal-border brutal-shadow-lg mx-auto mb-6 flex items-center justify-center font-heading text-4xl font-bold">
+              1
+            </div>
+            <h3 class="font-bold text-xl mb-2">Get a Bot Token</h3>
+            <p class="font-mono text-sm">Message @BotFather on Telegram.<br>Takes 30 seconds. Free. No credit card. No "enterprise plan".</p>
+          </div>
+
+          <div class="text-center">
+            <div class="w-20 h-20 bg-pop-blue brutal-border brutal-shadow-lg mx-auto mb-6 flex items-center justify-center font-heading text-4xl font-bold">
+              2
+            </div>
+            <h3 class="font-bold text-xl mb-2">Configure</h3>
+            <p class="font-mono text-sm">Paste token. Enter your user ID. Pick a folder where your chaos lives. Done.</p>
+          </div>
+
+          <div class="text-center">
+            <div class="w-20 h-20 bg-pop-green brutal-border brutal-shadow-lg mx-auto mb-6 flex items-center justify-center font-heading text-4xl font-bold">
+              3
+            </div>
+            <h3 class="font-bold text-xl mb-2">Start Vibing</h3>
+            <p class="font-mono text-sm">Send a message. Watch the magic. Touch grass (optional but recommended).</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Demo Section -->
+    <section id="demo" class="px-4 py-16 bg-pop-blue">
+      <div class="max-w-4xl mx-auto text-center">
+        <h2 class="font-heading text-4xl md:text-5xl font-bold mb-8">
+          See it in action
+        </h2>
+        <div class="bg-white brutal-border brutal-shadow-lg p-8 md:p-12">
+          <div class="aspect-video bg-brutal-black brutal-border flex items-center justify-center">
+            <p class="text-white font-mono text-lg">[screen recording coming soon]</p>
+          </div>
+        </div>
+        <p class="mt-6 font-mono text-sm">
+          If you budgeted money for this, idk, <span class="bg-pop-yellow px-1">buy mass amounts of boba.</span> Tip your barista. Donate to <a href="https://donate.wikimedia.org" class="underline hover:text-pop-pink font-bold">Wikipedia</a>, they're down bad.
+        </p>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="px-4 py-16">
+      <div class="max-w-3xl mx-auto">
+        <div class="bg-brutal-black text-white brutal-border p-8 md:p-12 text-center">
+          <h2 class="font-heading text-3xl md:text-4xl font-bold mb-6">
+            Ready to code from literally anywhere?
+          </h2>
+          <div class="flex flex-wrap justify-center gap-3 mb-8 font-mono text-sm">
+            <span class="bg-pop-yellow text-brutal-black px-3 py-1 brutal-border">macOS 12+</span>
+            <span class="bg-pop-blue text-brutal-black px-3 py-1 brutal-border">Claude Code CLI</span>
+            <span class="bg-pop-pink text-brutal-black px-3 py-1 brutal-border">Telegram</span>
+            <span class="bg-pop-green text-brutal-black px-3 py-1 brutal-border">Claude Sub</span>
+          </div>
+          <a href="https://github.com/Studio-Sunnyfield/vibegram/releases/latest"
+             class="inline-block bg-pop-yellow text-brutal-black brutal-border brutal-shadow-lg px-10 py-5 font-bold text-xl hover-shift cursor-pointer">
+            Download Vibegram
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="px-4 py-8 border-t-3 border-brutal-black">
+    <div class="max-w-6xl mx-auto">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+        <div class="flex items-center gap-3">
+          <img src="./icon.png" alt="Vibegram" class="w-6 h-6">
+          <span class="font-mono text-sm">
+            A side quest by <a href="https://github.com/Studio-Sunnyfield" class="underline hover:text-pop-pink">Studio Sunnyfield</a>
+          </span>
+        </div>
+        <div class="flex items-center gap-6 font-mono text-sm">
+          <a href="https://github.com/Studio-Sunnyfield/vibegram" class="hover:text-pop-pink cursor-pointer">[github]</a>
+          <a href="https://github.com/Studio-Sunnyfield/vibegram/releases" class="hover:text-pop-pink cursor-pointer">[releases]</a>
+          <a href="https://github.com/Studio-Sunnyfield/vibegram/issues" class="hover:text-pop-pink cursor-pointer">[issues]</a>
+        </div>
+      </div>
+
+      <!-- Rotating footer joke -->
+      <div class="text-center mt-6 font-mono text-sm">
+        <span id="rotating-footer" class="bg-pop-yellow px-2 brutal-border">You text your AI girlfriend. Why not your Claude Code?</span>
+      </div>
+
+      <div class="text-center mt-4 font-mono text-xs text-gray-500">
+        Not officially sponsored by Dario and Amanda.<br>
+        This website was built with Vibegram.<br>
+        Real devs use <span class="font-bold">--dangerously-skip-permissions</span>
+      </div>
+
+      <div class="text-center mt-4 font-mono text-xs text-gray-400">
+        © 2025 Not Anthropic. Built with undiagnosed ADHD and mass amounts of spite.
+      </div>
+
+      <div class="text-center mt-4">
+        <a href="https://www.samhsa.gov/find-help/national-helpline" class="font-mono text-xs text-gray-400 hover:text-pop-pink transition-colors">
+          (Addicted to vibe coding? Help is available)
+        </a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Rotating text script -->
+  <script>
+    const locations = [
+      "on the toilet.",
+      "ignoring your family.",
+      "at the DMV.",
+      "fighting with your partner.",
+      "in a useless meeting.",
+      "at a kid's birthday party.",
+      "waiting at the dentist.",
+      "avoiding responsibilities.",
+      "touching grass.",
+      "in therapy."
+    ];
+
+    const footerJokes = [
+      "You text your AI girlfriend. Why not your Claude Code?",
+      "The VM will contain the blast radius.",
+      "Your spaghetti code, now fully autonomous.",
+      "Claude's in a sandbox. Your career isn't.",
+      "Deploy now. Read the diff never.",
+      "bypassPermissions mode: because you're built different.",
+      "Vibe code from anywhere. Regret it from everywhere.",
+      "Mobile access to your favorite footgun."
+    ];
+
+    let currentIndex = 0;
+    let footerIndex = 0;
+    const element = document.getElementById('rotating-location');
+    const footerElement = document.getElementById('rotating-footer');
+
+    function rotateText() {
+      element.style.opacity = '0';
+      element.style.transform = 'translateY(10px)';
+
+      setTimeout(() => {
+        currentIndex = (currentIndex + 1) % locations.length;
+        element.textContent = locations[currentIndex];
+        element.style.opacity = '1';
+        element.style.transform = 'translateY(0)';
+      }, 200);
+    }
+
+    function rotateFooter() {
+      footerElement.style.opacity = '0';
+
+      setTimeout(() => {
+        footerIndex = (footerIndex + 1) % footerJokes.length;
+        footerElement.textContent = footerJokes[footerIndex];
+        footerElement.style.opacity = '1';
+      }, 200);
+    }
+
+    element.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+    footerElement.style.transition = 'opacity 0.2s ease';
+
+    // Check for reduced motion preference
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setInterval(rotateText, 2500);
+      setInterval(rotateFooter, 4000);
+    }
+  </script>
+</body>
+</html>
