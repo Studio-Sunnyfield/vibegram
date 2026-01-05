@@ -1,17 +1,20 @@
 # Vibegram
 
-Control [Claude Code](https://claude.ai/claude-code) from Telegram.
+Control [Claude Code](https://claude.ai/claude-code) from Telegram. Voice-first mobile coding.
 
 <img src="icon.png" width="128" alt="Vibegram icon">
 
+**[Website](https://studio-sunnyfield.github.io/vibegram/)** · **[Download](https://github.com/Studio-Sunnyfield/vibegram/releases/latest)**
+
 ## What is this?
 
-Vibegram is a macOS menu bar app that bridges Telegram to Claude Code CLI. Send messages from your phone, and Claude Code executes on your machine.
+Vibegram is a macOS menu bar app that bridges Telegram to Claude Code CLI. Send voice messages or text from your phone, and Claude Code executes on your machine.
 
 **Use cases:**
-- Code from your phone while on the go
+- Voice-code from anywhere (Telegram transcribes for you)
 - Quick fixes without opening your laptop
 - Mobile pair programming with Claude
+- Use Claude Code while AFK - meetings, commutes, couches
 
 ## Prerequisites
 
@@ -110,6 +113,29 @@ Use this in [Claude Code hooks](https://claude.ai/claude-code/hooks) to customiz
 **Commands not working:**
 - Make sure the bot is running (filled icon in menu bar)
 - Check the project directory exists
+
+## Roadmap
+
+**v1.1 - CLI Mode**
+- Standalone CLI (no Electron dependency)
+- `npx vibegram` or `vibegram serve`
+- Deploy on any server/VM, run headless
+- Config via env vars or `~/.vibegram.json`
+
+**v1.2 - Multi-Agent Support**
+- Abstract the "coding agent" interface
+- Support opencode, aider, other CLIs
+- `--agent claude|opencode|aider`
+
+**v1.3 - Multi-Messenger**
+- Abstract the "messenger" interface
+- Discord, Slack, WhatsApp, Signal
+- Same bot logic, different transports
+
+**v2.0 - Cross Platform**
+- Linux support (CLI mode)
+- Windows support
+- System tray for non-macOS
 
 ## License
 
