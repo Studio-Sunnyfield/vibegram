@@ -55,12 +55,9 @@ jobs:
           mkdir -p $HOME/private_keys
           echo -n "$APPLE_API_KEY_BASE64" | base64 --decode -o $HOME/private_keys/AuthKey_${{ secrets.APPLE_API_KEY_ID }}.p8
 
-      - name: Build and Sign (notarization disabled for now)
+      - name: Build and Sign (notarization disabled)
         working-directory: app
-        env:
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          # APPLE_API_KEY intentionally not set - skips notarization
+        # No APPLE_* env vars = skips notarization
         run: npm run build
 
       - name: Upload DMG
