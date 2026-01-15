@@ -1,7 +1,7 @@
 {
   "name": "vibegram",
   "productName": "Vibegram",
-  "version": "1.0.0",
+  "version": "1.0.7",
   "description": "Control Claude Code from Telegram - voice-first mobile coding",
   "author": "Studio Sunnyfield",
   "license": "MIT",
